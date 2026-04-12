@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
+from src.environment import SatelliteCAMEnv  # ← این باید باشه
 
 # Suppress warnings for cleaner output
 import warnings
@@ -43,13 +44,15 @@ from src.evaluation_script import evaluate_agent, compare_conditions
 
 
 # Configuration
+# CONFIG آپدیت شده برای IEEE
+
 CONFIG = {
     'scenario_file': 'scenarios/iridium-33-debris',
-    'use_real_orbital': False,  # Start with simplified for faster training
+    'use_real_orbital': False,  # فعلاً simplified
     'max_steps': 100,
-    'total_timesteps': 100000,
-    'eval_episodes': 20,
-    'seed': 42,
+    'total_timesteps': 500000,
+    'eval_episodes': 50,
+    'seed': 42,  # ✅ اینو اضافه کن
     
     # PPO hyperparameters
     'learning_rate': 3e-4,
@@ -61,8 +64,8 @@ CONFIG = {
     'clip_range': 0.2,
     'ent_coef': 0.0,
     
-    # Security evaluation
-    'noise_levels': [0, 2, 5, 10],  # Sigma for Gaussian noise
+    # Security
+    'noise_levels': [0, 2, 5, 10],
     'attack_probability': 0.3,
     
     # Paths
@@ -70,7 +73,6 @@ CONFIG = {
     'logs_dir': 'results/logs',
     'plots_dir': 'results/plots',
 }
-
 
 def setup_directories():
     """Create necessary directories."""
@@ -104,7 +106,13 @@ def train_agent():
     
     # Create environment
     print("\n[1] Creating environment...")
-    env = create_environment(use_real_orbital=False, seed=CONFIG['seed'])
+    env = SatelliteCAMEnv(
+        use_real_orbital=False,
+        max_steps=200,              # بیشتر از 100
+        collision_distance=0.5,     # 500m (بزرگ‌تر = راحت‌تر)
+        safe_distance=3.0,          # 3km (باید از این دور بشه)
+        max_deviation=15.0          # 15km (بیشتر مجازه)
+)
     
     # Check environment
     print("[2] Checking environment...")
@@ -386,3 +394,41 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# اضافه به انتهای train.py
+
+def train_multiple_seeds():
+    """Train with multiple seeds for statistical significance"""
+    results = {}
+    
+    for seed in CONFIG['seeds']:
+        print(f"\n{'='*70}")
+        print(f"TRAINING WITH SEED {seed}")
+        print(f"{'='*70}")
+        
+        CONFIG['seed'] = seed
+        model = train_agent()
+        
+        # Evaluate
+        normal_metrics = evaluate_normal(model)
+        adv_metrics = evaluate_adversarial(model, noise_sigma=5.0)
+        
+        results[f'seed_{seed}'] = {
+            'normal': normal_metrics,
+            'adversarial': adv_metrics
+        }
+    
+    # Aggregate results
+    print(f"\n{'='*70}")
+    print("AGGREGATE RESULTS (3 SEEDS)")
+    print(f"{'='*70}")
+    
+    success_rates_normal = [results[f'seed_{s}']['normal']['success_rate'] 
+                           for s in CONFIG['seeds']]
+    success_rates_adv = [results[f'seed_{s}']['adversarial']['success_rate'] 
+                        for s in CONFIG['seeds']]
+    
+    print(f"Normal Success Rate:   {np.mean(success_rates_normal):.3f} ± {np.std(success_rates_normal):.3f}")
+    print(f"Adversarial Success:   {np.mean(success_rates_adv):.3f} ± {np.std(success_rates_adv):.3f}")
+    
+    return results

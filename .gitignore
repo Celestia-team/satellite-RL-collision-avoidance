@@ -23,7 +23,7 @@ venv/
 !requirements.txt
 
 # Results (large files)
-results/models/
+# results/models/
 results/logs/*.log
 
 # OS

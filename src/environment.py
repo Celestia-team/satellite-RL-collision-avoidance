@@ -270,35 +270,52 @@ class SatelliteCAMEnv(gym.Env):
         truncated = False
         info = {}
         
-        if distance < self.collision_distance * 0.5:
+        # Calculate deviation first (needed for both checks)
+        if self.use_real_orbital and self.orbit_chaser_original is not None:
+            try:
+                orig_pos, _, _ = calculate_relative_state(self.orbit_chaser_original, self.orbit_threat)
+                curr_pos, _, _ = self._get_relative_state()
+                deviation = np.linalg.norm(curr_pos - orig_pos)
+            except:
+                deviation = 0.0
+        else:
+            deviation = np.linalg.norm(self.satellite_position - self.initial_position)
+        
+        # 1. Collision (too close)
+        if distance < self.collision_distance:
             terminated = True
             info['termination_reason'] = 'collision'
             info['success'] = False
+            info['collision'] = True
         
+        # 2. Successful avoidance (safe distance achieved)
         elif distance > self.safe_distance and self.steps > 10:
             terminated = True
             info['termination_reason'] = 'success'
             info['success'] = True
+            info['collision'] = False
         
-        if self.use_real_orbital and self.orbit_chaser_original is not None:
-            orig_pos, _, _ = calculate_relative_state(self.orbit_chaser_original, self.orbit_threat)
-            curr_pos, _, _ = self._get_relative_state()
-            deviation = np.linalg.norm(curr_pos - orig_pos)
-        else:
-            deviation = np.linalg.norm(self.satellite_position - self.initial_position)
-        
-        if deviation > self.max_deviation:
+        # 3. Max deviation (lost satellite - too far from nominal orbit)
+        elif deviation > self.max_deviation:
             terminated = True
             info['termination_reason'] = 'max_deviation'
             info['success'] = False
+            info['collision'] = False
         
-        elif self.steps >= self.max_steps:
+        # 4. Time limit
+        if not terminated and self.steps >= self.max_steps:
             truncated = True
             info['termination_reason'] = 'timeout'
             info['success'] = distance > self.safe_distance
+            info['collision'] = False
         
-        return terminated, truncated, info
-    
+        # Ensure all keys exist
+        if 'success' not in info:
+            info['success'] = False
+        if 'collision' not in info:
+            info['collision'] = False
+        
+        return terminated, truncated, info    
     def render(self):
         if len(self.trajectory) == 0:
             print("No trajectory to render")

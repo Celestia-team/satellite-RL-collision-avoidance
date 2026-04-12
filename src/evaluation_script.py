@@ -7,7 +7,7 @@ import numpy as np
 import gymnasium as gym
 from typing import List, Dict, Tuple, Any
 from stable_baselines3 import PPO
-from security_module import AdversarialWrapper
+from .security_module import AdversarialWrapper
 
 
 def evaluate_agent(

@@ -1,0 +1,38 @@
+{
+  "normal": {
+    "success_rate": 1.0,
+    "avg_fuel": 0.03736219595613328,
+    "avg_min_distance": 0.0,
+    "avg_reward": -18.026059484343122,
+    "collision_rate": 0.0,
+    "std_fuel": 0.008044916930705132,
+    "std_distance": 0.0
+  },
+  "adversarial_noise_2": {
+    "success_rate": 1.0,
+    "avg_fuel": 0.03996894461673101,
+    "avg_min_distance": 0.0,
+    "avg_reward": -17.06088497308458,
+    "collision_rate": 0.0,
+    "std_fuel": 0.011164583627816232,
+    "std_distance": 0.0
+  },
+  "adversarial_noise_5": {
+    "success_rate": 1.0,
+    "avg_fuel": 0.03834211988841635,
+    "avg_min_distance": 0.0,
+    "avg_reward": -15.990450607749422,
+    "collision_rate": 0.0,
+    "std_fuel": 0.010611548623661872,
+    "std_distance": 0.0
+  },
+  "adversarial_noise_10": {
+    "success_rate": 1.0,
+    "avg_fuel": 0.03836261255709417,
+    "avg_min_distance": 0.0,
+    "avg_reward": -17.444110820784005,
+    "collision_rate": 0.0,
+    "std_fuel": 0.010600834885404066,
+    "std_distance": 0.0
+  }
+}
