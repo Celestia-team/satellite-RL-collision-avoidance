@@ -17,14 +17,6 @@ Create a custom Gymnasium environment where an RL agent (PPO) learns
 Collision Avoidance Maneuvers (CAM) using real TLE data from poliastro, 
 with cybersecurity constraints (spoofing/jamming simulation).
 
-## ✅ Results
-
-| Condition | Success Rate | Collision Rate | Avg Fuel (m/s) |
-|-----------|-------------|----------------|----------------|
-| Normal | 100% | 0% | 0.037 |
-| Adversarial (σ=2) | 100% | 0% | 0.040 |
-| Adversarial (σ=5) | 100% | 0% | 0.038 |
-| Adversarial (σ=10) | 100% | 0% | 0.038 |
 
 ## 🚀 Training
 
