@@ -4,13 +4,14 @@
 **Project:** Reinforcement Learning for Secure Collision Avoidance Maneuvers  
 
 ## 👥 Team Members
-- **Dr. Maryam Raouph** - Orbital Dynamics & TLE  
+- **Maryam Raouph** - Orbital Dynamics & TLE  
 - **Aparna Dongale** - Gym Environment & RL
 - **Maria Chowdhury** - Cybersecurity Layer
 - **Pouya Latifiyan** - Training & Integration
 
 ## 👥 Team lead
-- **Pouya Latifiyan** - Coordinator
+- **Pouya Latifiyan** - Coordinator and Supervisor
+- **Lucky Bosse** - Co-supervisor
 
 ## 🎯 Goal
 Create a custom Gymnasium environment where an RL agent (PPO) learns 
