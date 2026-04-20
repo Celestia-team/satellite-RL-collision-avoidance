@@ -1,434 +1,262 @@
 """
-Training and Evaluation Script for Satellite CAM with PPO
-Integrates: Environment (Aparna) + Orbital Dynamics (Raouph) + Security (Maria)
+Training script for Satellite CAM with PPO
+Supports parallel CPU training using SubprocVecEnv
 Author: Pouya (Person 4) - Coordinator
 """
 
 import os
-import sys
-import json
 import numpy as np
-import matplotlib.pyplot as plt
+import json
 from datetime import datetime
+from typing import Dict, Optional
+import argparse
+import sys
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
-from src.environment import SatelliteCAMEnv  # ← این باید باشه
-
-# Suppress warnings for cleaner output
-import warnings
-warnings.filterwarnings('ignore')
+sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 # RL libraries
-try:
-    from stable_baselines3 import PPO
-    from stable_baselines3.common.env_checker import check_env
-    from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
-    from stable_baselines3.common.monitor import Monitor
-    from stable_baselines3.common.vec_env import DummyVecEnv
-    STABLE_BASELINES_AVAILABLE = True
-except ImportError:
-    STABLE_BASELINES_AVAILABLE = False
-    print("ERROR: stable-baselines3 not installed. Run: pip install stable-baselines3")
+from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
+from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.evaluation import evaluate_policy
 
-# Local modules
-from src.environment import SatelliteCAMEnv
-from src.orbital_dynamics import (
-    load_tle_from_celestrak, 
-    create_orbit_from_tle,
-    propagate_orbit,
-    calculate_relative_state,
-    detect_close_approach
-)
-from src.security_module import AdversarialWrapper
-from src.evaluation_script import evaluate_agent, compare_conditions
+# Custom modules
+from environment import SatelliteCAMEnv, make_parallel_envs
+from security_module import AdversarialWrapper, make_secure_env
 
+def make_env(scenario_file=None, use_real_orbital=True, rank=0, seed=42):
+    def _init():
+        if scenario_file and scenario_file.endswith('.json'):
+            env = SatelliteCAMEnv(
+                scenario_file=scenario_file,
+                use_real_orbital=True,
+                max_steps=100,
+                time_step=60.0
+            )
+        else:
+            env = SatelliteCAMEnv(
+                scenario_file=scenario_file,
+                use_real_orbital=use_real_orbital,
+                max_steps=100,
+                time_step=60.0
+            )
+        # ✅ Different seed for each parallel environment
+        env.reset(seed=seed + rank)
+        env = Monitor(env)
+        return env
+    return _init
 
-# Configuration
-# CONFIG آپدیت شده برای IEEE
+def train_agent(
+    n_envs: int = 4,
+    total_timesteps: int = 500_000,
+    use_real_orbital: bool = True,  # Set True if poliastro available
+    scenario_file: Optional[str] = None,
+    save_dir: str = "./models",
+    log_dir: str = "./logs",
+    seed: int = 42
+) -> Dict:
+    """
+    Train PPO agent with parallel CPU environments
+    """
+    print(f"Starting training with {n_envs} parallel environments")
+    print(f"Device: CPU (parallel)")
 
-CONFIG = {
-    'scenario_file': 'scenarios/iridium-33-debris',
-    'use_real_orbital': False,  # فعلاً simplified
-    'max_steps': 100,
-    'total_timesteps': 500000,
-    'eval_episodes': 50,
-    'seed': 42,  # ✅ اینو اضافه کن
+    train_use_real = False  # Always simplified for training
+    eval_use_real = False  # User choice for evaluation
     
-    # PPO hyperparameters
-    'learning_rate': 3e-4,
-    'n_steps': 2048,
-    'batch_size': 64,
-    'n_epochs': 10,
-    'gamma': 0.99,
-    'gae_lambda': 0.95,
-    'clip_range': 0.2,
-    'ent_coef': 0.0,
+    print(f"[IEEE Hybrid] Training: Simplified Model (forced)")
     
-    # Security
-    'noise_levels': [0, 2, 5, 10],
-    'attack_probability': 0.3,
+    # Create vectorized environment for training
+    env = SubprocVecEnv([make_env(scenario_file, train_use_real, i, seed) for i in range(n_envs)])
     
-    # Paths
-    'models_dir': 'results/models',
-    'logs_dir': 'results/logs',
-    'plots_dir': 'results/plots',
-}
-
-def setup_directories():
-    """Create necessary directories."""
-    for dir_path in [CONFIG['models_dir'], CONFIG['logs_dir'], CONFIG['plots_dir']]:
-        Path(dir_path).mkdir(parents=True, exist_ok=True)
-    print(f"✓ Directories created")
-
-
-def create_environment(use_real_orbital: bool = None, seed: int = None) -> SatelliteCAMEnv:
-    """Create and wrap environment."""
-    if use_real_orbital is None:
-        use_real_orbital = CONFIG['use_real_orbital']
+    # Create evaluation environment (single, no parallel)
     
-    env = SatelliteCAMEnv(
-        scenario_file=CONFIG['scenario_file'] if Path(CONFIG['scenario_file']).exists() else None,
-        use_real_orbital=use_real_orbital,
-        max_steps=CONFIG['max_steps']
+    eval_env = SatelliteCAMEnv(
+        scenario_file=scenario_file,
+        use_real_orbital=False,
+        max_steps=100
+    )
+    eval_env = Monitor(eval_env) 
+    
+    print(f"Using real orbital: {eval_use_real}")
+
+    
+    # PPO hyperparameters optimized for satellite control
+    policy_kwargs = dict(
+        net_arch=[dict(pi=[256, 256], vf=[256, 256])]  # Larger network for complex dynamics
     )
     
-    if seed is not None:
-        env.reset(seed=seed)
-    
-    return env
-
-
-def train_agent():
-    """Train PPO agent on collision avoidance task."""
-    print("\n" + "="*70)
-    print("PHASE 1: TRAINING")
-    print("="*70)
-    
-    # Create environment
-    print("\n[1] Creating environment...")
-    env = SatelliteCAMEnv(
-        use_real_orbital=False,
-        max_steps=200,              # بیشتر از 100
-        collision_distance=0.5,     # 500m (بزرگ‌تر = راحت‌تر)
-        safe_distance=3.0,          # 3km (باید از این دور بشه)
-        max_deviation=15.0          # 15km (بیشتر مجازه)
-)
-    
-    # Check environment
-    print("[2] Checking environment...")
-    try:
-        check_env(env)
-        print("   ✓ Environment valid")
-    except Exception as e:
-        print(f"   ⚠ Environment check warning: {e}")
-    
-    # Wrap with Monitor for logging
-    env = Monitor(env, CONFIG['logs_dir'] + "/training_monitor")
-    
-    # Create vectorized environment
-    vec_env = DummyVecEnv([lambda: env])
-    
-    # Create PPO model
-    print("[3] Creating PPO model...")
     model = PPO(
         "MlpPolicy",
-        vec_env,
-        learning_rate=CONFIG['learning_rate'],
-        n_steps=CONFIG['n_steps'],
-        batch_size=CONFIG['batch_size'],
-        n_epochs=CONFIG['n_epochs'],
-        gamma=CONFIG['gamma'],
-        gae_lambda=CONFIG['gae_lambda'],
-        clip_range=CONFIG['clip_range'],
-        ent_coef=CONFIG['ent_coef'],
+        env,
         verbose=1,
-        tensorboard_log=CONFIG['logs_dir'] + "/tensorboard/",
-        seed=CONFIG['seed']
+        learning_rate=1e-4,
+        n_steps=1024,
+        batch_size=32,
+        n_epochs=10,
+        gamma=0.99,
+        gae_lambda=0.95,
+        clip_range=0.2,
+        ent_coef=0.05,  # Encourage exploration
+        policy_kwargs=policy_kwargs,
+        tensorboard_log=log_dir,
+        device='cpu',  # Force CPU usage
+        seed=seed
     )
     
     # Callbacks
+    eval_callback = EvalCallback(
+        eval_env,
+        best_model_save_path=save_dir,
+        log_path=log_dir,
+        eval_freq=10_000,
+        deterministic=True,
+        render=False,
+        n_eval_episodes=10
+    )
+    
     checkpoint_callback = CheckpointCallback(
-        save_freq=10000,
-        save_path=CONFIG['models_dir'],
-        name_prefix="ppo_satellite_cam"
+        save_freq=50_000,
+        save_path=save_dir,
+        name_prefix="ppo_satellite"
     )
     
     # Train
-    print(f"[4] Training for {CONFIG['total_timesteps']} timesteps...")
-    print("   (This may take several minutes...)")
-    
+    print("Training started...")
     model.learn(
-        total_timesteps=CONFIG['total_timesteps'],
-        callback=checkpoint_callback,
+        total_timesteps=total_timesteps,
+        callback=[eval_callback, checkpoint_callback],
         progress_bar=True
     )
     
     # Save final model
-    final_model_path = f"{CONFIG['models_dir']}/ppo_satellite_cam_final.zip"
+    final_model_path = os.path.join(save_dir, "ppo_satellite_final")
     model.save(final_model_path)
-    print(f"   ✓ Model saved to {final_model_path}")
+    print(f"Model saved to {final_model_path}")
     
-    # Save config
-    config_path = f"{CONFIG['models_dir']}/training_config.json"
-    with open(config_path, 'w') as f:
-        json.dump(CONFIG, f, indent=2)
-    print(f"   ✓ Config saved to {config_path}")
+    # Training info
+    training_info = {
+        'algorithm': 'PPO',
+        'n_envs': n_envs,
+        'total_timesteps': total_timesteps,
+        'final_model_path': final_model_path,
+        'use_real_orbital': use_real_orbital,
+        'timestamp': datetime.now().isoformat()
+    }
     
-    return model
+    with open(os.path.join(save_dir, 'training_info.json'), 'w') as f:
+        json.dump(training_info, f, indent=2)
+    # Save final model
+    final_model_path = os.path.join(save_dir, "ppo_satellite_final")
+    model.save(final_model_path)
+    print(f"Model saved to {final_model_path}")
 
+    # ✅ CRITICAL: Close environments to prevent memory leak
+    env.close()
+    eval_env.close()
+    print("Environments closed successfully")
+    
+    return training_info
 
-def evaluate_normal(model):
-    """Evaluate in normal (clean) conditions."""
-    print("\n" + "="*70)
-    print("PHASE 2A: NORMAL EVALUATION")
-    print("="*70)
+def evaluate_security(
+    model_path: str,
+    n_episodes: int = 50,
+    use_real_orbital: bool = False,
+    scenario_file: Optional[str] = None,
+    results_file: str = "security_results.json"
+):
+    """
+    Evaluate trained agent under normal vs adversarial conditions
+    """
+    from evaluation_script import evaluate_agent, print_comparison_table, print_performance_degradation
     
-    env = create_environment(use_real_orbital=False)
-    env = AdversarialWrapper(env, noise_sigma=0, attack_probability=0)
+    print("\n" + "="*60)
+    print("SECURITY EVALUATION: Normal vs Adversarial")
+    print("="*60)
     
-    print(f"\nEvaluating {CONFIG['eval_episodes']} episodes...")
-    metrics, episodes = evaluate_agent(
-        model, env, 
-        n_episodes=CONFIG['eval_episodes'], 
+    # Load model
+    env = SatelliteCAMEnv(use_real_orbital=use_real_orbital, scenario_file=scenario_file)
+    model = PPO.load(model_path, env=env)
+    
+    # Normal evaluation
+    print("\n--- NORMAL CONDITIONS ---")
+    normal_env = make_secure_env(
+        SatelliteCAMEnv(use_real_orbital=use_real_orbital, scenario_file=scenario_file),
         adversarial=False
     )
+    normal_metrics, normal_data = evaluate_agent(model, normal_env, n_episodes, adversarial=False)
     
-    print("\n--- Normal Conditions Results ---")
-    print(f"Success Rate:      {metrics['success_rate']:.3f}")
-    print(f"Collision Rate:      {metrics['collision_rate']:.3f}")
-    print(f"Avg Fuel Used (m/s): {metrics['avg_fuel']:.3f}")
-    print(f"Avg Min Distance:    {metrics['avg_min_distance']:.2f} km")
-    print(f"Avg Reward:          {metrics['avg_reward']:.2f}")
-    
-    return metrics
-
-
-def evaluate_adversarial(model, noise_sigma: float = 5.0):
-    """Evaluate in adversarial (noisy) conditions."""
-    print(f"\n{'='*70}")
-    print(f"PHASE 2B: ADVERSARIAL EVALUATION (noise_sigma={noise_sigma})")
-    print(f"{'='*70}")
-    
-    env = create_environment(use_real_orbital=False)
-    env = AdversarialWrapper(
-        env, 
-        noise_sigma=noise_sigma,
-        attack_probability=CONFIG['attack_probability'],
-        cyber_risk_weight=0.01
+    # Adversarial evaluation
+    print("\n--- ADVERSARIAL CONDITIONS ---")
+    adv_env = make_secure_env(
+        SatelliteCAMEnv(use_real_orbital=use_real_orbital, scenario_file=scenario_file),
+        adversarial=True,
+        noise_sigma=5.0,
+        attack_prob=0.3
     )
+    adv_metrics, adv_data = evaluate_agent(model, adv_env, n_episodes, adversarial=True)
     
-    print(f"\nEvaluating {CONFIG['eval_episodes']} episodes...")
-    metrics, episodes = evaluate_agent(
-        model, env,
-        n_episodes=CONFIG['eval_episodes'],
-        adversarial=True
-    )
-    
-    print(f"\n--- Adversarial Conditions Results (σ={noise_sigma}) ---")
-    print(f"Success Rate:      {metrics['success_rate']:.3f}")
-    print(f"Collision Rate:      {metrics['collision_rate']:.3f}")
-    print(f"Avg Fuel Used (m/s): {metrics['avg_fuel']:.3f}")
-    print(f"Avg Min Distance:    {metrics['avg_min_distance']:.2f} km")
-    print(f"Avg Reward:          {metrics['avg_reward']:.2f}")
-    
-    return metrics
-
-
-def full_security_evaluation(model):
-    """Evaluate across multiple noise levels."""
-    print("\n" + "="*70)
-    print("PHASE 3: FULL SECURITY EVALUATION")
-    print("="*70)
-    
-    results = {}
-    
-    # Normal (baseline)
-    results['normal'] = evaluate_normal(model)
-    
-    # Adversarial with different noise levels
-    for noise in CONFIG['noise_levels'][1:]:  # Skip 0 (already done)
-        results[f'adversarial_noise_{noise}'] = evaluate_adversarial(model, noise_sigma=noise)
+    # Print results
+    print_comparison_table(normal_metrics, adv_metrics)
+    print_performance_degradation(normal_metrics, adv_metrics)
     
     # Save results
-    results_path = f"{CONFIG['logs_dir']}/security_evaluation_results.json"
-    with open(results_path, 'w') as f:
-        # Convert numpy types to native Python for JSON serialization
-        serializable_results = {}
-        for key, val in results.items():
-            serializable_results[key] = {
-                k: float(v) if isinstance(v, (np.floating, np.integer)) else v
-                for k, v in val.items()
-            }
-        json.dump(serializable_results, f, indent=2)
+    results = {
+        'normal': normal_metrics,
+        'adversarial': adv_metrics,
+        'degradation': {
+            'success_rate_drop': normal_metrics['success_rate'] - adv_metrics['success_rate'],
+            'fuel_increase_pct': ((adv_metrics['avg_fuel'] - normal_metrics['avg_fuel']) / 
+                                 normal_metrics['avg_fuel'] * 100) if normal_metrics['avg_fuel'] > 0 else 0
+        }
+    }
     
-    print(f"\n✓ Results saved to {results_path}")
+    with open(results_file, 'w') as f:
+        json.dump(results, f, indent=2)
+    
+    print(f"\nResults saved to {results_file}")
     
     return results
 
-
-def plot_comparison(results: Dict):
-    """Generate comparison plots."""
-    print("\n" + "="*70)
-    print("PHASE 4: GENERATING PLOTS")
-    print("="*70)
-    
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    
-    conditions = list(results.keys())
-    success_rates = [results[k]['success_rate'] for k in conditions]
-    collision_rates = [results[k]['collision_rate'] for k in conditions]
-    fuel_usage = [results[k]['avg_fuel'] for k in conditions]
-    min_distances = [results[k]['avg_min_distance'] for k in conditions]
-    
-    # Success rate
-    axes[0, 0].bar(conditions, success_rates, color='green', alpha=0.7)
-    axes[0, 0].set_ylabel('Success Rate')
-    axes[0, 0].set_title('Success Rate: Normal vs Adversarial')
-    axes[0, 0].set_ylim(0, 1)
-    axes[0, 0].tick_params(axis='x', rotation=45)
-    
-    # Collision rate
-    axes[0, 1].bar(conditions, collision_rates, color='red', alpha=0.7)
-    axes[0, 1].set_ylabel('Collision Rate')
-    axes[0, 1].set_title('Collision Rate: Normal vs Adversarial')
-    axes[0, 1].set_ylim(0, 1)
-    axes[0, 1].tick_params(axis='x', rotation=45)
-    
-    # Fuel usage
-    axes[1, 0].bar(conditions, fuel_usage, color='blue', alpha=0.7)
-    axes[1, 0].set_ylabel('Avg Fuel Used (m/s)')
-    axes[1, 0].set_title('Fuel Consumption: Normal vs Adversarial')
-    axes[1, 0].tick_params(axis='x', rotation=45)
-    
-    # Min distance
-    axes[1, 1].bar(conditions, min_distances, color='orange', alpha=0.7)
-    axes[1, 1].set_ylabel('Avg Min Distance (km)')
-    axes[1, 1].set_title('Minimum Approach Distance')
-    axes[1, 1].tick_params(axis='x', rotation=45)
-    
-    plt.tight_layout()
-    
-    plot_path = f"{CONFIG['plots_dir']}/security_comparison.png"
-    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-    print(f"✓ Plot saved to {plot_path}")
-    
-    plt.close()
-    
-    # Generate LaTeX table
-    latex_table = generate_latex_table(results)
-    latex_path = f"{CONFIG['logs_dir']}/comparison_table.tex"
-    with open(latex_path, 'w') as f:
-        f.write(latex_table)
-    print(f"✓ LaTeX table saved to {latex_path}")
-
-
-def generate_latex_table(results: Dict) -> str:
-    """Generate LaTeX table for paper."""
-    latex = r"""
-\begin{table}[h]
-\centering
-\caption{Performance Comparison: Normal vs Adversarial Conditions}
-\label{tab:security_comparison}
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Condition} & \textbf{Success Rate} & \textbf{Collision Rate} & \textbf{Fuel (m/s)} & \textbf{Min Dist (km)} \\
-\midrule
-"""
-    
-    for condition, metrics in results.items():
-        cond_name = condition.replace('_', ' ').title()
-        latex += f"{cond_name} & "
-        latex += f"{metrics['success_rate']:.3f} & "
-        latex += f"{metrics['collision_rate']:.3f} & "
-        latex += f"{metrics['avg_fuel']:.3f} & "
-        latex += f"{metrics['avg_min_distance']:.2f} \\\\\n"
-    
-    latex += r"""\bottomrule
-\end{tabular}
-\end{table}
-"""
-    return latex
-
-
 def main():
-    """Main execution pipeline."""
-    print("="*70)
-    print("SATELLITE COLLISION AVOIDANCE - RL TRAINING & EVALUATION")
-    print("Celestia Team - LEO Satellite Systems with Cybersecurity")
-    print("="*70)
-    print(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    parser = argparse.ArgumentParser(description='Train or evaluate Satellite CAM RL agent')
+    parser.add_argument('--mode', choices=['train', 'eval', 'both'], default='both',
+                       help='Mode: train, eval, or both')
+    parser.add_argument('--n-envs', type=int, default=4,
+                       help='Number of parallel environments for training')
+    parser.add_argument('--timesteps', type=int, default=500_000,
+                       help='Total training timesteps')
+    parser.add_argument('--scenario', type=str, default=None,
+                       help='Path to scenario JSON file')
+    parser.add_argument('--real-orbital', action='store_true',
+                       help='Use real orbital mechanics (requires poliastro)')
+    parser.add_argument('--model-path', type=str, default='./models/ppo_satellite_final',
+                       help='Path to trained model for evaluation')
+    parser.add_argument('--n-eval-episodes', type=int, default=50,
+                       help='Number of episodes for evaluation')
     
-    # Setup
-    setup_directories()
+    args = parser.parse_args()
     
-    # Check dependencies
-    if not STABLE_BASELINES_AVAILABLE:
-        print("\nERROR: Please install stable-baselines3:")
-        print("  pip install stable-baselines3")
-        return
+    if args.mode in ['train', 'both']:
+        print("Starting training...")
+        train_info = train_agent(
+            n_envs=args.n_envs,
+            total_timesteps=args.timesteps,
+            use_real_orbital=args.real_orbital,
+            scenario_file=args.scenario,
+            save_dir="./models",
+            log_dir="./logs"
+        )
     
-    # Phase 1: Train
-    model = train_agent()
-    
-    # Phase 2 & 3: Evaluate
-    results = full_security_evaluation(model)
-    
-    # Phase 4: Plot
-    plot_comparison(results)
-    
-    # Summary
-    print("\n" + "="*70)
-    print("EXECUTION COMPLETE")
-    print("="*70)
-    print(f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"\nKey Results:")
-    print(f"  Normal Success Rate:     {results['normal']['success_rate']:.3f}")
-    if 'adversarial_noise_5' in results:
-        print(f"  Adversarial (σ=5) Success: {results['adversarial_noise_5']['success_rate']:.3f}")
-    print(f"\nAll outputs saved to:")
-    print(f"  Models: {CONFIG['models_dir']}/")
-    print(f"  Logs:   {CONFIG['logs_dir']}/")
-    print(f"  Plots:  {CONFIG['plots_dir']}/")
-    print("="*70)
-
+    if args.mode in ['eval', 'both']:
+        print("Starting evaluation...")
+        results = evaluate_security(
+            model_path=args.model_path,
+            n_episodes=args.n_eval_episodes,
+            use_real_orbital=args.real_orbital,
+            scenario_file=args.scenario
+        )
 
 if __name__ == "__main__":
     main()
-
-# اضافه به انتهای train.py
-
-def train_multiple_seeds():
-    """Train with multiple seeds for statistical significance"""
-    results = {}
-    
-    for seed in CONFIG['seeds']:
-        print(f"\n{'='*70}")
-        print(f"TRAINING WITH SEED {seed}")
-        print(f"{'='*70}")
-        
-        CONFIG['seed'] = seed
-        model = train_agent()
-        
-        # Evaluate
-        normal_metrics = evaluate_normal(model)
-        adv_metrics = evaluate_adversarial(model, noise_sigma=5.0)
-        
-        results[f'seed_{seed}'] = {
-            'normal': normal_metrics,
-            'adversarial': adv_metrics
-        }
-    
-    # Aggregate results
-    print(f"\n{'='*70}")
-    print("AGGREGATE RESULTS (3 SEEDS)")
-    print(f"{'='*70}")
-    
-    success_rates_normal = [results[f'seed_{s}']['normal']['success_rate'] 
-                           for s in CONFIG['seeds']]
-    success_rates_adv = [results[f'seed_{s}']['adversarial']['success_rate'] 
-                        for s in CONFIG['seeds']]
-    
-    print(f"Normal Success Rate:   {np.mean(success_rates_normal):.3f} ± {np.std(success_rates_normal):.3f}")
-    print(f"Adversarial Success:   {np.mean(success_rates_adv):.3f} ± {np.std(success_rates_adv):.3f}")
-    
-    return results

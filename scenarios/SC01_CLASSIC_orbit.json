@@ -1,0 +1,17 @@
+{
+  "scenario_id": "SC01_CLASSIC",
+  "name": "Classic Iridium-Cosmos Collision (2009)",
+  "description": "Historical collision scenario. Debris from the 2009 crash. High relative velocity, near-circular orbits. Baseline for comparison.",
+  "tle_source_file": "iridium-33-debris.txt",
+  "chaser_norad_id": 24946,
+  "threat_norad_id": 33773,
+  "simulation_params": {
+    "time_step_seconds": 60,
+    "collision_distance_km": 0.1,
+    "safe_distance_km": 5.0,
+    "max_simulation_time_hours": 24,
+    "max_steps": 1440
+  },
+  "created_at": "2026-04-13T13:15:23.088753",
+  "version": "1.0"
+}

@@ -1,0 +1,17 @@
+{
+  "scenario_id": "SC03_COORBITAL",
+  "name": "Co-orbital Trailing Debris",
+  "description": "Slow approach scenario. Similar orbital elements. Tests precision low-thrust maneuvers for gradual conjunction.",
+  "tle_source_file": "iridium-33-debris.txt",
+  "chaser_norad_id": 24946,
+  "threat_norad_id": 33860,
+  "simulation_params": {
+    "time_step_seconds": 60,
+    "collision_distance_km": 0.2,
+    "safe_distance_km": 3.0,
+    "max_simulation_time_hours": 48,
+    "max_steps": 2880
+  },
+  "created_at": "2026-04-13T13:15:23.091754",
+  "version": "1.0"
+}

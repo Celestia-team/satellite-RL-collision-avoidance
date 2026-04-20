@@ -1,0 +1,17 @@
+{
+  "scenario_id": "SC04_DRIFT",
+  "name": "Long-Term Orbital Drift",
+  "description": "Long-term conjunction prediction with debris in diverging orbit. Tests planning horizon and fuel optimization.",
+  "tle_source_file": "iridium-33-debris.txt",
+  "chaser_norad_id": 24946,
+  "threat_norad_id": 34077,
+  "simulation_params": {
+    "time_step_seconds": 120,
+    "collision_distance_km": 0.5,
+    "safe_distance_km": 10.0,
+    "max_simulation_time_hours": 72,
+    "max_steps": 2160
+  },
+  "created_at": "2026-04-13T13:15:23.095754",
+  "version": "1.0"
+}

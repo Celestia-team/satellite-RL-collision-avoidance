@@ -1,0 +1,16 @@
+{
+  "scenario_id": "SC02_HIGHVEL_moderate_jamming",
+  "base_scenario": "SC02_HIGHVEL",
+  "name": "High-Velocity Close Approach - Moderate Jamming",
+  "attack_params": {
+    "noise_sigma_km": 5.0,
+    "attack_probability": 0.3,
+    "spoof_offset": [
+      20.0,
+      -15.0,
+      10.0
+    ],
+    "cyber_risk_weight": 0.01
+  },
+  "created_at": "2026-04-13T13:15:23.090753"
+}

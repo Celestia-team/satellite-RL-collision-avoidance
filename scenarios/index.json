@@ -1,0 +1,53 @@
+{
+  "project": "Satellite CAM - IEEE Conference Paper",
+  "generated_at": "2026-04-13T13:15:23.096754",
+  "total_scenarios": 4,
+  "attack_levels": 4,
+  "total_configurations": 16,
+  "scenarios": [
+    {
+      "id": "SC01_CLASSIC",
+      "name": "Classic Iridium-Cosmos Collision (2009)",
+      "orbit_file": "SC01_CLASSIC_orbit.json",
+      "adversarial_files": [
+        "SC01_CLASSIC_clean.json",
+        "SC01_CLASSIC_moderate_jamming.json",
+        "SC01_CLASSIC_aggressive_spoofing.json",
+        "SC01_CLASSIC_severe_attack.json"
+      ]
+    },
+    {
+      "id": "SC02_HIGHVEL",
+      "name": "High-Velocity Close Approach",
+      "orbit_file": "SC02_HIGHVEL_orbit.json",
+      "adversarial_files": [
+        "SC02_HIGHVEL_clean.json",
+        "SC02_HIGHVEL_moderate_jamming.json",
+        "SC02_HIGHVEL_aggressive_spoofing.json",
+        "SC02_HIGHVEL_severe_attack.json"
+      ]
+    },
+    {
+      "id": "SC03_COORBITAL",
+      "name": "Co-orbital Trailing Debris",
+      "orbit_file": "SC03_COORBITAL_orbit.json",
+      "adversarial_files": [
+        "SC03_COORBITAL_clean.json",
+        "SC03_COORBITAL_moderate_jamming.json",
+        "SC03_COORBITAL_aggressive_spoofing.json",
+        "SC03_COORBITAL_severe_attack.json"
+      ]
+    },
+    {
+      "id": "SC04_DRIFT",
+      "name": "Long-Term Orbital Drift",
+      "orbit_file": "SC04_DRIFT_orbit.json",
+      "adversarial_files": [
+        "SC04_DRIFT_clean.json",
+        "SC04_DRIFT_moderate_jamming.json",
+        "SC04_DRIFT_aggressive_spoofing.json",
+        "SC04_DRIFT_severe_attack.json"
+      ]
+    }
+  ]
+}

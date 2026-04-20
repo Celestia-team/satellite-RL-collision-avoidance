@@ -1,0 +1,17 @@
+{
+  "scenario_id": "SC02_HIGHVEL",
+  "name": "High-Velocity Close Approach",
+  "description": "High relative velocity scenario (>10 km/s). Large inclination difference. Tests agent reaction time for fast-approaching debris.",
+  "tle_source_file": "iridium-33-debris.txt",
+  "chaser_norad_id": 24946,
+  "threat_norad_id": 33853,
+  "simulation_params": {
+    "time_step_seconds": 30,
+    "collision_distance_km": 0.1,
+    "safe_distance_km": 5.0,
+    "max_simulation_time_hours": 12,
+    "max_steps": 1440
+  },
+  "created_at": "2026-04-13T13:15:23.089753",
+  "version": "1.0"
+}
