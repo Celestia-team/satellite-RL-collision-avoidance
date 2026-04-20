@@ -195,7 +195,7 @@ Validation on 108 cataloged debris fragments:
 ```bibtex
 @inproceedings{latifiyan2026domain,
   title={Domain Randomization for Adversarial Robustness in Orbital Collision Avoidance: A Deep Reinforcement Learning Approach},
-  author={Latifiyan, Pouya and Raouph, Maryam and Dongale, Aparna and Chowdhury, Maria and Bosse, Lucky},
+  author={Latifiyan, Pouya and Dongale, Aparna and Chowdhury, Maria and Bosse, Lucky and Raouph, Maryam },
   booktitle={Proceedings of the International Conference on Guidance, Navigation and Control (ICGNC)},
   year={2026},
   organization={Springer}
@@ -205,10 +205,10 @@ Validation on 108 cataloged debris fragments:
 ## 📧 Contact
 
 - **Pouya Latifiyan**: Pouya@buaa.edu.cn (Corresponding Author)
-- **Maryam Raouph**: Maryam.Raouph@staff.uni-marburg.de
-- **Aparna Dongale**: MIT Academy of Engineering, Pune
-- **Maria Chowdhury**: University of the Potomac, Washington, D.C.
+- **Aparna Dongale**: MIT Academy of Engineering, Pune (aparnadongale03@gmail.com)
+- **Maria Chowdhury**: University of the Potomac, Washington, D.C. (maria.chowdhury@gwmail.gwu.edu)
 - **Lucky Bosse**: Beihang University, Beijing (boselucky@buaa.edu.cn)
+- **Maryam Raouph**: Maryam.Raouph@staff.uni-marburg.de (Help in Astronomy Science)
 
 ## 📜 License
 
